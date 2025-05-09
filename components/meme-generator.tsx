@@ -359,6 +359,7 @@ export default function MemeGenerator() {
     if (!ctx) return;
 
     const img = new window.Image();
+    img.crossOrigin = "anonymous";
     img.src = backgroundImageUrl;
     await new Promise((resolve) => {
       img.onload = resolve;
