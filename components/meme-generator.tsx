@@ -1,13 +1,16 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Mic, Square, Download, Share2, Loader2, AlertTriangle } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Mic, MicOff, Square, Download, Share2, Loader2, AlertTriangle } from "lucide-react"
 import Image from "next/image"
+import { toast } from "sonner"
 
 export default function MemeGenerator() {
   const [isRecording, setIsRecording] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [transcript, setTranscript] = useState("")
   const [caption, setCaption] = useState("")
@@ -16,8 +19,10 @@ export default function MemeGenerator() {
   const [currentStep, setCurrentStep] = useState(1)
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
   const [apiWarning, setApiWarning] = useState<string | null>(null)
+  const [useAI, setUseAI] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
+  const audioChunks = useRef<Blob[]>([])
 
   // This function is for the recording start/stop Button
   const toggleRecording = async () => {
@@ -29,146 +34,118 @@ export default function MemeGenerator() {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      chunksRef.current = []
+      mediaRecorderRef.current = new MediaRecorder(stream)
+      audioChunks.current = []
 
-      mediaRecorder.ondataavailable = (e) => {
-        chunksRef.current.push(e.data)
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        audioChunks.current.push(event.data)
       }
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" })
-        setAudioBlob(audioBlob)
-        transcribeAudio(audioBlob)
-
-        // This is for stopping the microphone after recording
-        stream.getTracks().forEach((track) => track.stop())
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunks.current, { type: 'audio/wav' })
+        await processAudio(audioBlob)
       }
 
-      mediaRecorder.start()
+      mediaRecorderRef.current.start()
       setIsRecording(true)
     } catch (error) {
-      console.error("Error accessing microphone:", error)
-      alert("Could not access your microphone. Please check permissions and try again.")
+      toast.error("Error accessing microphone")
     }
   }
 
-  // This function is for transcribing the audio
-  const transcribeAudio = async (blob: Blob) => {
-    setIsLoading(true)
-    setCurrentStep(2)
-    setApiWarning(null)
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    }
+  }
 
+  const processAudio = async (audioBlob: Blob) => {
+    setIsProcessing(true)
     try {
-      const formData = new FormData()
-      formData.append("audio", blob)
+      // Use Web Speech API for transcription
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)()
+      recognition.lang = 'en-US'
+      recognition.continuous = false
+      recognition.interimResults = false
 
-      const response = await fetch("/api/transcribe", {
-        method: "POST",
-        body: formData,
-      })
+      recognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript
+        setTranscript(text)
 
-      if (!response.ok) {
-        throw new Error("Transcription failed")
-      }
+        // Detect emotion from transcribed text
+        const emotionResponse = await fetch('/api/detect-emotion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, useAI })
+        })
 
-      const data = await response.json()
-      setTranscript(data.transcript)
-
-      // This is for checking if the API is configured
-      if (data.isApiConfigured !== undefined) {
-        setApiConfigured(data.isApiConfigured)
-        if (!data.isApiConfigured) {
-          setApiWarning("Using fallback transcription as Hugging Face API key is not configured.")
+        const { emotion, method, confidence } = await emotionResponse.json()
+        
+        if (confidence === "low") {
+          toast.warning("Low confidence in emotion detection. Try rephrasing or using AI detection.")
         }
+
+        // Generate meme with detected emotion
+        const memeResponse = await fetch('/api/generate-meme', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ caption: text, emotion })
+        })
+
+        const { memeUrl } = await memeResponse.json()
+        setMemeUrl(memeUrl)
+        toast.success(`Meme generated using ${method} detection!`)
       }
 
-      // This is for generating the caption after transcription
-      generateCaption(data.transcript)
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error)
+        toast.error("Error processing speech")
+      }
+
+      recognition.start()
     } catch (error) {
-      console.error("Error transcribing audio:", error)
-      alert("Failed to transcribe audio. Using fallback text.")
-      setTranscript("This is a fallback transcription.")
-      generateCaption("This is a fallback transcription.")
+      toast.error("Error processing audio")
+    } finally {
+      setIsProcessing(false)
     }
   }
 
-  // This is for generating the caption using API
-  const generateCaption = async (text: string) => {
-    setCurrentStep(3)
-    setApiWarning(null)
-
-    try {
-      const response = await fetch("/api/generate-caption", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Caption generation failed")
-      }
-
-      const data = await response.json()
-      setCaption(data.caption)
-
-      // This is for checking if the API is configured
-      if (data.isApiConfigured !== undefined) {
-        setApiConfigured(data.isApiConfigured)
-        if (!data.isApiConfigured) {
-          setApiWarning("Using fallback caption as Hugging Face API key is not configured.")
-        }
-      }
-
-      // This is for generating the meme after caption
-      generateMeme(data.caption)
-    } catch (error) {
-      console.error("Error generating caption:", error)
-
-      // This is for the fallback caption
-      const fallbackCaptions = [
-        "N-NANI?! This wasn't in the manga!",
-        "My power level is OVER 9000!!!",
-        "I'm not crying... it's just raining on my face!",
-        "This isn't even my final form!",
-        "Omae wa mou shindeiru (You are already dead)",
-        "B-BAKA! It's not like I made this meme for you!",
-      ]
-      const caption = fallbackCaptions[Math.floor(Math.random() * fallbackCaptions.length)]
-
-      setCaption(caption)
-      setApiWarning("Failed to generate caption. Using a random anime caption instead.")
-      generateMeme(caption)
+  const handleTextSubmit = async () => {
+    if (!transcript) {
+      toast.error("Please enter a caption or use voice input...")
+      return
     }
-  }
 
-  // This is for generating the meme using API
-  const generateMeme = async (captionText: string) => {
-    setCurrentStep(4)
-
+    setIsProcessing(true)
     try {
-      const response = await fetch("/api/generate-meme", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ caption: captionText }),
+      // Detect emotion from text
+      const emotionResponse = await fetch('/api/detect-emotion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: transcript, useAI })
       })
 
-      if (!response.ok) {
-        throw new Error("Meme generation failed")
+      const { emotion, method, confidence } = await emotionResponse.json()
+      
+      if (confidence === "low") {
+        toast.warning("Low confidence in emotion detection. Try rephrasing or using AI detection.")
       }
 
-      const data = await response.json()
-      setMemeUrl(data.memeUrl)
-      setIsLoading(false)
+      // Generate meme
+      const memeResponse = await fetch('/api/generate-meme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caption: transcript, emotion })
+      })
+
+      const { memeUrl } = await memeResponse.json()
+      setMemeUrl(memeUrl)
+      toast.success(`Meme generated using ${method} detection!`)
     } catch (error) {
-      console.error("Error generating meme:", error)
-      setApiWarning("Failed to generate meme. Please try again.")
-      setIsLoading(false)
+      toast.error("Error generating meme")
+    } finally {
+      setIsProcessing(false)
     }
   }
 
@@ -229,7 +206,21 @@ export default function MemeGenerator() {
         )}
 
         <div className="space-y-8">
-            {/* This is the first step for recording the voice */ }
+          {/* Add AI toggle switch */}
+          <div className="flex items-center justify-end space-x-2">
+            <label htmlFor="ai-toggle" className="text-sm text-purple-200">
+              Use AI Detection
+            </label>
+            <Button
+              variant={useAI ? "default" : "outline"}
+              onClick={() => setUseAI(!useAI)}
+              className="w-12"
+            >
+              {useAI ? "ON" : "OFF"}
+            </Button>
+          </div>
+
+          {/* This is the first step for recording the voice */ }
           <div className={`transition-opacity ${currentStep === 1 ? "opacity-100" : "opacity-50"}`}>
             <h2 className="text-xl font-bold mb-4 flex items-center">
               <span className="bg-purple-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">
@@ -244,7 +235,7 @@ export default function MemeGenerator() {
                 size="lg"
                 className={`rounded-full w-20 h-20 ${isRecording ? "bg-red-500 hover:bg-red-600" : "bg-purple-600 hover:bg-purple-700"}`}
               >
-                {isRecording ? <Square className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
+                {isRecording ? <MicOff className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
               </Button>
             </div>
 
@@ -319,13 +310,11 @@ export default function MemeGenerator() {
           )}
 
           {/* This is for the loading state */}
-          {isLoading && (
+          {isProcessing && (
             <div className="flex flex-col items-center justify-center py-8">
               <Loader2 className="h-12 w-12 animate-spin text-purple-400" />
               <p className="mt-4 text-purple-200">
-                {currentStep === 2 && "Transcribing your voice..."}
-                {currentStep === 3 && "Generating anime caption..."}
-                {currentStep === 4 && "Creating your meme..."}
+                Processing...
               </p>
             </div>
           )}

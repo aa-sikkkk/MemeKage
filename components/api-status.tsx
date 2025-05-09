@@ -20,6 +20,7 @@ export default function ApiStatus() {
       } finally {
         setIsLoading(false)
       }
+
     }
 
     checkApiStatus()
