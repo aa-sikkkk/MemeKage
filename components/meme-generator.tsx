@@ -9,6 +9,12 @@ import Image from "next/image"
 import { toast } from "sonner"
 import { MemeCustomizer, MemeSettings } from "./meme-customizer"
 
+const EMOTION_IMAGES: Record<string, string> = {
+  surprised: "/images/surprised.jpg",
+  blushing: "/images/blushing.jpg",
+  shocked: "/images/shocked.jpg",
+};
+
 export default function MemeGenerator() {
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -399,7 +405,6 @@ export default function MemeGenerator() {
   const handleGenerateMeme = async () => {
     let safeTranscript = transcript;
     if (!safeTranscript || safeTranscript.trim() === "") {
-      // Provide a default caption if none is available
       safeTranscript = "N-NANI?! This wasn't in the manga!";
     }
     setIsProcessing(true);
@@ -412,16 +417,8 @@ export default function MemeGenerator() {
       });
       const { emotion } = await emotionRes.json();
 
-      // 2. Get imagePath from /api/generate-meme
-      const memeRes = await fetch('/api/generate-meme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caption: safeTranscript, emotion })
-      });
-      const { imagePath } = await memeRes.json();
-
-      // 3. Use imagePath as background (unless DALL-E is enabled)
-      let backgroundImageUrl = imagePath;
+      // 2. Use local mapping for image path
+      let backgroundImageUrl = EMOTION_IMAGES[emotion] || EMOTION_IMAGES["surprised"];
       if (memeSettings.dalle.enabled && memeSettings.dalle.prompt) {
         try {
           const dalleImageUrl = await generateDalleBackground(
