@@ -312,83 +312,86 @@ export default function MemeGenerator() {
     }
   }
 
-  const generateMeme = async (imageUrl: string, caption: string) => {
-    const canvas = document.createElement("canvas")
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
+  const generateMeme = async (memeUrlParam: string, transcriptParam: string) => {
+    let backgroundImageUrl = "";
+    let caption = transcriptParam;
 
-    let backgroundImageUrl = imageUrl
-
-    // Generate DALL-E background if enabled
+    // 1. If DALL-E is enabled, use DALL-E background
     if (memeSettings.dalle.enabled && memeSettings.dalle.prompt) {
       try {
         const dalleImageUrl = await generateDalleBackground(
           memeSettings.dalle.prompt,
           memeSettings.dalle.style,
           memeSettings.dalle.size
-        )
+        );
         if (dalleImageUrl) {
-          backgroundImageUrl = dalleImageUrl
-          toast.success("DALL-E background generated successfully!")
+          backgroundImageUrl = dalleImageUrl;
+          toast.success("DALL-E background generated successfully!");
         }
       } catch (error) {
-        console.error("Error generating DALL-E background:", error)
-        toast.error("Failed to generate DALL-E background. Using default image.")
+        console.error("Error generating DALL-E background:", error);
+        toast.error("Failed to generate DALL-E background. Using emotion image.");
       }
     }
 
-    const img = new window.Image()
-    img.src = backgroundImageUrl
-    await new Promise((resolve) => {
-      img.onload = resolve
-    })
+    // 2. If DALL-E is not enabled or failed, use the emotion image
+    if (!backgroundImageUrl) {
+      // Get emotion from /api/detect-emotion
+      const emotionRes = await fetch('/api/detect-emotion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: transcriptParam, useAI })
+      });
+      const { emotion } = await emotionRes.json();
+      // Get imagePath from /api/generate-meme
+      const memeRes = await fetch('/api/generate-meme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caption: transcriptParam, emotion })
+      });
+      const { imagePath } = await memeRes.json();
+      backgroundImageUrl = imagePath;
+    }
 
-    canvas.width = img.width
-    canvas.height = img.height
+    // Now generate the meme as before
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const img = new window.Image();
+    img.src = backgroundImageUrl;
+    await new Promise((resolve) => {
+      img.onload = resolve;
+    });
+
+    canvas.width = img.width;
+    canvas.height = img.height;
 
     // Draw base image
-    ctx.drawImage(img, 0, 0)
+    ctx.drawImage(img, 0, 0);
 
     // Apply effects
-    applyEffects(canvas)
+    applyEffects(canvas);
 
     // Draw text
-    const topY = canvas.height * 0.1 + memeSettings.text.position.y
-    const bottomY = canvas.height * 0.9 + memeSettings.text.position.y
-    const centerX = canvas.width / 2 + memeSettings.text.position.x
+    const topY = canvas.height * 0.1 + memeSettings.text.position.y;
+    const bottomY = canvas.height * 0.9 + memeSettings.text.position.y;
+    const centerX = canvas.width / 2 + memeSettings.text.position.x;
 
     if (memeSettings.text.top) {
-      drawText(ctx, memeSettings.text.top, centerX, topY)
+      drawText(ctx, memeSettings.text.top, centerX, topY);
     }
     if (memeSettings.text.bottom) {
-      drawText(ctx, memeSettings.text.bottom, centerX, bottomY)
+      drawText(ctx, memeSettings.text.bottom, centerX, bottomY);
     }
 
     // Draw stickers
-    drawStickers(ctx, canvas)
+    drawStickers(ctx, canvas);
 
-    // Convert to blob and upload
-    const blob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob)
-      }, "image/png")
-    })
-
-    const formData = new FormData()
-    formData.append("meme", blob)
-
-    const response = await fetch("/api/upload-meme", {
-      method: "POST",
-      body: formData
-    })
-
-    if (!response.ok) {
-      throw new Error("Failed to upload meme")
-    }
-
-    const { url } = await response.json()
-    setMemeUrl(url)
-    setCurrentStep(4)
+    // Convert to data URL and set as memeUrl
+    const dataUrl = canvas.toDataURL("image/png");
+    setMemeUrl(dataUrl);
+    setCurrentStep(4);
   }
 
   return (

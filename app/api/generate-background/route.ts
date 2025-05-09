@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
     // Temporary fallback: Return a placeholder image
     return NextResponse.json({
-      imageUrl: "https://placehold.co/512x512/png",
+      imageUrl: "/images/shocked.png",
       message: "DALL-E integration is currently disabled. Add your OpenAI API key to enable it."
     })
 
