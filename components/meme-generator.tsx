@@ -9,6 +9,7 @@ import Image from "next/image"
 import { toast } from "sonner"
 import { MemeCustomizer, MemeSettings } from "./meme-customizer"
 import { supabase } from "../src/lib/supabaseClient"
+import { BackgroundSelector } from "./background-selector"
 
 const EMOTION_IMAGES: Record<string, string> = {
   surprised: "/images/surprised.jpg",
@@ -70,6 +71,18 @@ export default function MemeGenerator() {
       .then(data => setBackgrounds(data.backgrounds));
   }, []);
 
+  const handleBackgroundSelect = (url: string) => {
+    setSelectedBackground(url);
+    // Update meme settings to use the selected background
+    setMemeSettings(prev => ({
+      ...prev,
+      dalle: {
+        ...prev.dalle,
+        enabled: false // Disable DALL-E when using custom background
+      }
+    }));
+  };
+
   const handleBackgroundUpload = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -81,6 +94,14 @@ export default function MemeGenerator() {
     if (data.url) {
       setBackgrounds((prev) => [...prev, { name: file.name, url: data.url }]);
       setSelectedBackground(data.url);
+      // Update meme settings to use the uploaded background
+      setMemeSettings(prev => ({
+        ...prev,
+        dalle: {
+          ...prev.dalle,
+          enabled: false // Disable DALL-E when using custom background
+        }
+      }));
     }
   };
 
@@ -467,7 +488,7 @@ export default function MemeGenerator() {
     }
   };
 
-  // Update generateMemeWithBackground to accept the caption
+  // Update generateMemeWithBackground to use selected background
   const generateMemeWithBackground = async (backgroundImageUrl: string, caption: string) => {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -475,15 +496,15 @@ export default function MemeGenerator() {
 
     let img = new window.Image();
     img.crossOrigin = "anonymous";
-    img.src = backgroundImageUrl;
+    img.src = selectedBackground || backgroundImageUrl;
     try {
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = () => {
-          // Fallback to surprised image if loading fails
+          // Fallback to emotion image if loading fails
           img = new window.Image();
           img.crossOrigin = "anonymous";
-          img.src = "/images/surprised.jpg";
+          img.src = backgroundImageUrl;
           img.onload = resolve;
           img.onerror = reject;
         };
@@ -501,13 +522,16 @@ export default function MemeGenerator() {
     // Apply effects
     applyEffects(canvas);
 
-    // Draw text (always use the provided caption)
+    // Draw text
     const topY = canvas.height * 0.1 + memeSettings.text.position.y;
     const bottomY = canvas.height * 0.9 + memeSettings.text.position.y;
     const centerX = canvas.width / 2 + memeSettings.text.position.x;
 
-    if (caption) {
-      drawText(ctx, caption, centerX, topY);
+    if (memeSettings.text.top) {
+      drawText(ctx, memeSettings.text.top, centerX, topY);
+    }
+    if (memeSettings.text.bottom) {
+      drawText(ctx, memeSettings.text.bottom, centerX, bottomY);
     }
 
     // Draw stickers
@@ -580,6 +604,24 @@ export default function MemeGenerator() {
               <div className="bg-black/30 p-4 rounded-lg">
                 <p className="text-lg">{transcript}</p>
               </div>
+            </div>
+          )}
+
+          {/* Add Background Selector after transcription */}
+          {transcript && (
+            <div className={`transition-opacity ${currentStep === 2 ? "opacity-100" : "opacity-50"}`}>
+              <h2 className="text-xl font-bold mb-4 flex items-center">
+                <span className="bg-purple-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">
+                  2
+                </span>
+                Choose Background
+              </h2>
+              <BackgroundSelector
+                backgrounds={backgrounds}
+                selectedBackground={selectedBackground}
+                onBackgroundSelect={handleBackgroundSelect}
+                onBackgroundUpload={handleBackgroundUpload}
+              />
             </div>
           )}
 
