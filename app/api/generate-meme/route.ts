@@ -15,13 +15,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No caption provided" }, { status: 400 })
     }
 
-    if (!emotion || !EMOTION_IMAGES[emotion as keyof typeof EMOTION_IMAGES]) {
-      return NextResponse.json({ error: "Invalid or missing emotion" }, { status: 400 })
+    // Always use a valid emotion, fallback to 'surprised'
+    let validEmotion = emotion as keyof typeof EMOTION_IMAGES;
+    if (!validEmotion || !EMOTION_IMAGES[validEmotion]) {
+      validEmotion = "surprised";
     }
 
     // Return the image path and caption for client-side processing
     return NextResponse.json({
-      imagePath: EMOTION_IMAGES[emotion as keyof typeof EMOTION_IMAGES],
+      imagePath: EMOTION_IMAGES[validEmotion],
       caption,
       message: "Use client-side canvas for meme generation"
     })

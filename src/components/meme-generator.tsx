@@ -42,90 +42,71 @@ export default function MemeGenerator() {
     checkApiStatus()
   }, [])
 
-  // Start/stop recording
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
   const toggleRecording = async () => {
     if (isRecording) {
-      mediaRecorderRef.current?.stop()
-      setIsRecording(false)
-      return
+      stopRecording();
+      return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      chunksRef.current = []
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
-        chunksRef.current.push(e.data)
-      }
+        chunksRef.current.push(e.data);
+      };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" })
-        setAudioBlob(audioBlob)
-        transcribeAudio(audioBlob)
+        const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
+        setAudioBlob(audioBlob);
+        transcribeAudio();
 
         // Stop all tracks to release the microphone
-        stream.getTracks().forEach((track) => track.stop())
-      }
-
-      mediaRecorder.start()
-      setIsRecording(true)
-    } catch (error) {
-      console.error("Error accessing microphone:", error)
-      setApiWarning("Could not access your microphone. Please check permissions and try again.")
-    }
-  }
-
-  // Transcribe audio using API
-  const transcribeAudio = async (blob: Blob) => {
-    setIsLoading(true)
-    setCurrentStep(2)
-    setApiWarning(null)
-
-    // If API routes are not working, use fallback
-    if (apiStatus === "error") {
-      setTimeout(() => {
-        setTranscript("This is a fallback transcription since API routes are not working.")
-        setApiWarning("Using fallback transcription as API routes are not working.")
-        generateCaption("This is a fallback transcription.")
-      }, 1500)
-      return
-    }
-
-    try {
-      const formData = new FormData()
-      formData.append("audio", blob)
-
-      const response = await fetch("/api/transcribe", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error("Transcription failed")
-      }
-
-      const data = await response.json()
-      setTranscript(data.transcript)
-
-      // Check if API is configured
-      if (data.isApiConfigured !== undefined) {
-        setApiConfigured(data.isApiConfigured)
-        if (!data.isApiConfigured) {
-          setApiWarning("Using fallback transcription as Hugging Face API key is not configured.")
+        if (mediaRecorder.stream) {
+          mediaRecorder.stream.getTracks().forEach((track) => track.stop());
         }
-      }
+      };
 
-      // Automatically generate caption after transcription
-      generateCaption(data.transcript)
+      mediaRecorder.start();
+      setIsRecording(true);
     } catch (error) {
-      console.error("Error transcribing audio:", error)
-      setTranscript("This is a fallback transcription.")
-      setApiWarning("Failed to transcribe audio. Using fallback text.")
-      generateCaption("This is a fallback transcription.")
+      console.error("Error accessing microphone:", error);
+      setApiWarning("Could not access your microphone. Please check permissions and try again.");
     }
-  }
+  };
+
+  // Transcribe audio using Web Speech API
+  const transcribeAudio = async () => {
+    // Use Web Speech API for transcription
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      setTranscript(text);
+      // Continue with caption generation...
+      generateCaption(text);
+    };
+
+    recognition.onerror = (event) => {
+      setTranscript("Transcription failed.");
+      setApiWarning("Failed to transcribe audio. Using fallback text.");
+      generateCaption("This is a fallback transcription.");
+    };
+
+    recognition.start();
+  };
 
   // Generate caption using API
   const generateCaption = async (text: string) => {
@@ -200,17 +181,6 @@ export default function MemeGenerator() {
   const generateMeme = async (captionText: string) => {
     setCurrentStep(4)
 
-    // If API routes are not working, use fallback
-    if (apiStatus === "error") {
-      setTimeout(() => {
-        // Use a placeholder image
-        setMemeUrl("/images/anime1.jpg")
-        setApiWarning("Using placeholder image as API routes are not working.")
-        setIsLoading(false)
-      }, 1500)
-      return
-    }
-
     try {
       const response = await fetch("/api/generate-meme", {
         method: "POST",
@@ -225,11 +195,34 @@ export default function MemeGenerator() {
       }
 
       const data = await response.json()
-      setMemeUrl(data.memeUrl)
+      const image = new window.Image()
+      image.src = data.imagePath
+      await new Promise((resolve) => { image.onload = resolve })
+
+      // Create canvas and draw image + caption
+      const canvas = document.createElement("canvas")
+      canvas.width = image.width
+      canvas.height = image.height
+      const ctx = canvas.getContext("2d")
+      if (!ctx) {
+        throw new Error("Could not get 2D context from canvas.")
+      }
+      ctx.drawImage(image, 0, 0)
+
+      // Draw caption (simple, you can style as needed)
+      ctx.font = "bold 32px Impact"
+      ctx.fillStyle = "#fff"
+      ctx.strokeStyle = "#000"
+      ctx.lineWidth = 4
+      ctx.textAlign = "center"
+      ctx.textBaseline = "bottom"
+      ctx.strokeText(captionText, canvas.width / 2, canvas.height - 40)
+      ctx.fillText(captionText, canvas.width / 2, canvas.height - 40)
+
+      setMemeUrl(canvas.toDataURL("image/png"))
       setIsLoading(false)
     } catch (error) {
       console.error("Error generating meme:", error)
-      // Use a placeholder image
       setMemeUrl("/images/anime1.jpg")
       setApiWarning("Failed to generate meme. Using a placeholder image.")
       setIsLoading(false)

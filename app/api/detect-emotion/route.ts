@@ -82,6 +82,11 @@ export async function POST(request: Request) {
       }
     }
 
+    // Always return a valid emotion, default to 'surprised' if not found
+    if (!detectedEmotion || !["surprised", "blushing", "shocked"].includes(detectedEmotion)) {
+      detectedEmotion = "surprised";
+    }
+
     return NextResponse.json({ 
       emotion: detectedEmotion,
       method: "keyword",
