@@ -3,11 +3,12 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-// import { Textarea } from "@/components/ui/textarea"
+// import { Textarea } from "../ui/textarea"
 import { Mic, MicOff, Square, Download, Share2, Loader2, AlertTriangle } from "lucide-react"
 import Image from "next/image"
 import { toast } from "sonner"
 import { MemeCustomizer, MemeSettings } from "./meme-customizer"
+import { supabase } from "../src/lib/supabaseClient"
 
 const EMOTION_IMAGES: Record<string, string> = {
   surprised: "/images/surprised.jpg",
@@ -60,6 +61,28 @@ export default function MemeGenerator() {
       size: "512x512"
     }
   })
+  const [backgrounds, setBackgrounds] = useState<{name: string, url: string}[]>([]);
+  const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/backgrounds')
+      .then(res => res.json())
+      .then(data => setBackgrounds(data.backgrounds));
+  }, []);
+
+  const handleBackgroundUpload = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/upload-background", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    if (data.url) {
+      setBackgrounds((prev) => [...prev, { name: file.name, url: data.url }]);
+      setSelectedBackground(data.url);
+    }
+  };
 
   // This function is for the recording start/stop Button
   const toggleRecording = async () => {
@@ -450,12 +473,24 @@ export default function MemeGenerator() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const img = new window.Image();
+    let img = new window.Image();
     img.crossOrigin = "anonymous";
     img.src = backgroundImageUrl;
-    await new Promise((resolve) => {
-      img.onload = resolve;
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => {
+          // Fallback to surprised image if loading fails
+          img = new window.Image();
+          img.crossOrigin = "anonymous";
+          img.src = "/images/surprised.jpg";
+          img.onload = resolve;
+          img.onerror = reject;
+        };
+      });
+    } catch {
+      toast.error("Failed to load meme background image. Using fallback.");
+    }
 
     canvas.width = img.width;
     canvas.height = img.height;
@@ -613,7 +648,6 @@ export default function MemeGenerator() {
               settings={memeSettings}
               onCustomize={handleCustomize}
             />
-            
             {transcript && (
               <Button
                 onClick={handleGenerateMeme}
