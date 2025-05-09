@@ -321,13 +321,19 @@ export default function MemeGenerator() {
 
     // Generate DALL-E background if enabled
     if (memeSettings.dalle.enabled && memeSettings.dalle.prompt) {
-      const dalleImageUrl = await generateDalleBackground(
-        memeSettings.dalle.prompt,
-        memeSettings.dalle.style,
-        memeSettings.dalle.size
-      )
-      if (dalleImageUrl) {
-        backgroundImageUrl = dalleImageUrl
+      try {
+        const dalleImageUrl = await generateDalleBackground(
+          memeSettings.dalle.prompt,
+          memeSettings.dalle.style,
+          memeSettings.dalle.size
+        )
+        if (dalleImageUrl) {
+          backgroundImageUrl = dalleImageUrl
+          toast.success("DALL-E background generated successfully!")
+        }
+      } catch (error) {
+        console.error("Error generating DALL-E background:", error)
+        toast.error("Failed to generate DALL-E background. Using default image.")
       }
     }
 
@@ -376,8 +382,13 @@ export default function MemeGenerator() {
       body: formData
     })
 
+    if (!response.ok) {
+      throw new Error("Failed to upload meme")
+    }
+
     const { url } = await response.json()
     setMemeUrl(url)
+    setCurrentStep(4)
   }
 
   return (
@@ -504,13 +515,13 @@ export default function MemeGenerator() {
             </div>
           )}
 
-          {transcript && (
-            <div className="space-y-4">
-              <MemeCustomizer
-                settings={memeSettings}
-                onCustomize={handleCustomize}
-              />
-              
+          <div className="space-y-4">
+            <MemeCustomizer
+              settings={memeSettings}
+              onCustomize={handleCustomize}
+            />
+            
+            {transcript && (
               <Button
                 onClick={() => generateMeme(memeUrl, transcript)}
                 disabled={isProcessing}
@@ -525,8 +536,8 @@ export default function MemeGenerator() {
                   "Generate Meme"
                 )}
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </Card>
     </div>

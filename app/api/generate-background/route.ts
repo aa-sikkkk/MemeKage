@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server"
-
-// TODO: Uncomment and add your OpenAI API key when ready to use DALL-E
 // import OpenAI from "openai"
 
+// Uncomment and add your OpenAI API key when ready to use DALL-E
 // const openai = new OpenAI({
 //   apiKey: process.env.OPENAI_API_KEY,
 // })
@@ -11,7 +10,7 @@ export async function POST(request: Request) {
   try {
     const { prompt, size } = await request.json()
 
-    // TODO: Uncomment this section when you have an OpenAI API key
+    // Uncomment this section when you have an OpenAI API key
     /*
     const response = await openai.images.generate({
       model: "dall-e-3",

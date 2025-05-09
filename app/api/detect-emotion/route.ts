@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server"
-// Remove the comment on the OpenAi Code so that you can use more robust AI-based detection
-
-// import OpenAI from "openai"
+import OpenAI from "openai"
 
 // Uncomment and add your OpenAI API key to use AI-based detection
 // const openai = new OpenAI({
 //   apiKey: process.env.OPENAI_API_KEY,
 // })
-
 
 // I'm using simple DIY detection for this project 
 // because I don't have access to the OpenAI API key
@@ -38,7 +35,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No text provided" }, { status: 400 })
     }
 
-    // This is for the AI-based emotion detection (commented out until API key is available)
+    // Uncomment this section when you have an OpenAI API key
     /*
     if (useAI) {
       try {
@@ -71,7 +68,7 @@ export async function POST(request: Request) {
     }
     */
 
-    // For the DIY Keyword-based emotion detection (fallback)
+    // Keyword-based emotion detection (fallback)
     const lowerText = text.toLowerCase()
     let maxMatches = 0
     let detectedEmotion = "surprised" // default emotion
