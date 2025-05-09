@@ -397,9 +397,10 @@ export default function MemeGenerator() {
 
   // New function to handle the full meme generation flow
   const handleGenerateMeme = async () => {
-    if (!transcript) {
-      toast.error("Please enter a caption or use voice input...");
-      return;
+    let safeTranscript = transcript;
+    if (!safeTranscript || safeTranscript.trim() === "") {
+      // Provide a default caption if none is available
+      safeTranscript = "N-NANI?! This wasn't in the manga!";
     }
     setIsProcessing(true);
     try {
@@ -407,7 +408,7 @@ export default function MemeGenerator() {
       const emotionRes = await fetch('/api/detect-emotion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: transcript, useAI })
+        body: JSON.stringify({ text: safeTranscript, useAI })
       });
       const { emotion } = await emotionRes.json();
 
@@ -415,7 +416,7 @@ export default function MemeGenerator() {
       const memeRes = await fetch('/api/generate-meme', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caption: transcript, emotion })
+        body: JSON.stringify({ caption: safeTranscript, emotion })
       });
       const { imagePath } = await memeRes.json();
 
@@ -433,13 +434,12 @@ export default function MemeGenerator() {
             toast.success("DALL-E background generated successfully!");
           }
         } catch (error) {
-          console.error("Error generating DALL-E background:", error);
           toast.error("Failed to generate DALL-E background. Using emotion image.");
         }
       }
 
-      // Generate meme with the chosen background
-      await generateMemeWithBackground(backgroundImageUrl);
+      // Generate meme with the chosen background and safe caption
+      await generateMemeWithBackground(backgroundImageUrl, safeTranscript);
     } catch (error) {
       toast.error("Error generating meme");
     } finally {
@@ -447,8 +447,8 @@ export default function MemeGenerator() {
     }
   };
 
-  // Helper to generate meme with a given background image
-  const generateMemeWithBackground = async (backgroundImageUrl: string) => {
+  // Update generateMemeWithBackground to accept the caption
+  const generateMemeWithBackground = async (backgroundImageUrl: string, caption: string) => {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -469,16 +469,13 @@ export default function MemeGenerator() {
     // Apply effects
     applyEffects(canvas);
 
-    // Draw text
+    // Draw text (always use the provided caption)
     const topY = canvas.height * 0.1 + memeSettings.text.position.y;
     const bottomY = canvas.height * 0.9 + memeSettings.text.position.y;
     const centerX = canvas.width / 2 + memeSettings.text.position.x;
 
-    if (memeSettings.text.top) {
-      drawText(ctx, memeSettings.text.top, centerX, topY);
-    }
-    if (memeSettings.text.bottom) {
-      drawText(ctx, memeSettings.text.bottom, centerX, bottomY);
+    if (caption) {
+      drawText(ctx, caption, centerX, topY);
     }
 
     // Draw stickers
