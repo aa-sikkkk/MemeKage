@@ -609,13 +609,7 @@ export default function MemeGenerator() {
 
           {/* Add Background Selector after transcription */}
           {transcript && (
-            <div className={`transition-opacity ${currentStep === 2 ? "opacity-100" : "opacity-50"}`}>
-              <h2 className="text-xl font-bold mb-4 flex items-center">
-                <span className="bg-purple-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center mr-2">
-                  2
-                </span>
-                Choose Background
-              </h2>
+            <div>
               <BackgroundSelector
                 backgrounds={backgrounds}
                 selectedBackground={selectedBackground}
