@@ -395,6 +395,101 @@ export default function MemeGenerator() {
     setCurrentStep(4);
   }
 
+  // New function to handle the full meme generation flow
+  const handleGenerateMeme = async () => {
+    if (!transcript) {
+      toast.error("Please enter a caption or use voice input...");
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      // 1. Detect emotion
+      const emotionRes = await fetch('/api/detect-emotion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: transcript, useAI })
+      });
+      const { emotion } = await emotionRes.json();
+
+      // 2. Get imagePath from /api/generate-meme
+      const memeRes = await fetch('/api/generate-meme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caption: transcript, emotion })
+      });
+      const { imagePath } = await memeRes.json();
+
+      // 3. Use imagePath as background (unless DALL-E is enabled)
+      let backgroundImageUrl = imagePath;
+      if (memeSettings.dalle.enabled && memeSettings.dalle.prompt) {
+        try {
+          const dalleImageUrl = await generateDalleBackground(
+            memeSettings.dalle.prompt,
+            memeSettings.dalle.style,
+            memeSettings.dalle.size
+          );
+          if (dalleImageUrl) {
+            backgroundImageUrl = dalleImageUrl;
+            toast.success("DALL-E background generated successfully!");
+          }
+        } catch (error) {
+          console.error("Error generating DALL-E background:", error);
+          toast.error("Failed to generate DALL-E background. Using emotion image.");
+        }
+      }
+
+      // Generate meme with the chosen background
+      await generateMemeWithBackground(backgroundImageUrl);
+    } catch (error) {
+      toast.error("Error generating meme");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Helper to generate meme with a given background image
+  const generateMemeWithBackground = async (backgroundImageUrl: string) => {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.src = backgroundImageUrl;
+    await new Promise((resolve) => {
+      img.onload = resolve;
+    });
+
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    // Draw base image
+    ctx.drawImage(img, 0, 0);
+
+    // Apply effects
+    applyEffects(canvas);
+
+    // Draw text
+    const topY = canvas.height * 0.1 + memeSettings.text.position.y;
+    const bottomY = canvas.height * 0.9 + memeSettings.text.position.y;
+    const centerX = canvas.width / 2 + memeSettings.text.position.x;
+
+    if (memeSettings.text.top) {
+      drawText(ctx, memeSettings.text.top, centerX, topY);
+    }
+    if (memeSettings.text.bottom) {
+      drawText(ctx, memeSettings.text.bottom, centerX, bottomY);
+    }
+
+    // Draw stickers
+    drawStickers(ctx, canvas);
+
+    // Convert to data URL and set as memeUrl
+    const dataUrl = canvas.toDataURL("image/png");
+    setMemeUrl(dataUrl);
+    setCurrentStep(4);
+  };
+
   return (
     <div className="max-w-3xl mx-auto">
       <Card className="p-6 bg-white/10 backdrop-blur-sm border-purple-500/30">
@@ -527,7 +622,7 @@ export default function MemeGenerator() {
             
             {transcript && (
               <Button
-                onClick={() => generateMeme(memeUrl, transcript)}
+                onClick={handleGenerateMeme}
                 disabled={isProcessing}
                 className="w-full"
               >
