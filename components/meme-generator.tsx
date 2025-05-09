@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Textarea } from "@/components/ui/textarea"
+// import { Textarea } from "@/components/ui/textarea"
 import { Mic, MicOff, Square, Download, Share2, Loader2, AlertTriangle } from "lucide-react"
 import Image from "next/image"
 import { toast } from "sonner"
+import { MemeCustomizer, MemeSettings } from "./meme-customizer"
 
 export default function MemeGenerator() {
   const [isRecording, setIsRecording] = useState(false)
@@ -23,6 +24,36 @@ export default function MemeGenerator() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
   const audioChunks = useRef<Blob[]>([])
+  const [memeSettings, setMemeSettings] = useState<MemeSettings>({
+    text: {
+      top: "",
+      bottom: "",
+      font: "Impact",
+      size: 48,
+      color: "#ffffff",
+      strokeColor: "#000000",
+      strokeWidth: 2,
+      position: {
+        x: 0,
+        y: 0
+      },
+      rotation: 0
+    },
+    effects: {
+      brightness: 100,
+      contrast: 100,
+      saturation: 100,
+      blur: 0
+    },
+    filters: [],
+    stickers: [],
+    dalle: {
+      enabled: false,
+      prompt: "",
+      style: "anime",
+      size: "512x512"
+    }
+  })
 
   // This function is for the recording start/stop Button
   const toggleRecording = async () => {
@@ -195,6 +226,160 @@ export default function MemeGenerator() {
     setApiWarning(null)
   }
 
+  const handleCustomize = (newSettings: MemeSettings) => {
+    setMemeSettings(newSettings)
+  }
+
+  const applyEffects = (canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    // Apply image effects
+    ctx.filter = `
+      brightness(${memeSettings.effects.brightness}%)
+      contrast(${memeSettings.effects.contrast}%)
+      saturate(${memeSettings.effects.saturation}%)
+      blur(${memeSettings.effects.blur}px)
+      ${memeSettings.filters.map(filter => {
+        switch (filter) {
+          case "grayscale": return "grayscale(100%)"
+          case "sepia": return "sepia(100%)"
+          case "invert": return "invert(100%)"
+          case "hue-rotate": return "hue-rotate(90deg)"
+          case "saturate": return "saturate(200%)"
+          default: return ""
+        }
+      }).join(" ")}
+    `
+  }
+
+  const drawText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number) => {
+    ctx.save()
+    ctx.font = `${memeSettings.text.size}px ${memeSettings.text.font}`
+    ctx.fillStyle = memeSettings.text.color
+    ctx.strokeStyle = memeSettings.text.strokeColor
+    ctx.lineWidth = memeSettings.text.strokeWidth
+    ctx.textAlign = "center"
+    ctx.textBaseline = "middle"
+    
+    // Apply rotation
+    ctx.translate(x, y)
+    ctx.rotate((memeSettings.text.rotation * Math.PI) / 180)
+    ctx.translate(-x, -y)
+
+    // Draw text with stroke
+    ctx.strokeText(text, x, y)
+    ctx.fillText(text, x, y)
+    ctx.restore()
+  }
+
+  const drawStickers = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+    memeSettings.stickers.forEach((sticker, index) => {
+      // Load and draw sticker images
+      const img = new window.Image()
+      img.src = `/stickers/${sticker}.png`
+      img.onload = () => {
+        const x = (index % 3) * (canvas.width / 3)
+        const y = Math.floor(index / 3) * (canvas.height / 3)
+        ctx.drawImage(img, x, y, 50, 50)
+      }
+    })
+  }
+
+  const generateDalleBackground = async (prompt: string, style: string, size: string) => {
+    try {
+      const response = await fetch('/api/generate-background', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: `${prompt}, ${style} style`,
+          size
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to generate background')
+      }
+
+      const { imageUrl } = await response.json()
+      return imageUrl
+    } catch (error) {
+      console.error('Error generating background:', error)
+      toast.error('Failed to generate background')
+      return null
+    }
+  }
+
+  const generateMeme = async (imageUrl: string, caption: string) => {
+    const canvas = document.createElement("canvas")
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    let backgroundImageUrl = imageUrl
+
+    // Generate DALL-E background if enabled
+    if (memeSettings.dalle.enabled && memeSettings.dalle.prompt) {
+      const dalleImageUrl = await generateDalleBackground(
+        memeSettings.dalle.prompt,
+        memeSettings.dalle.style,
+        memeSettings.dalle.size
+      )
+      if (dalleImageUrl) {
+        backgroundImageUrl = dalleImageUrl
+      }
+    }
+
+    const img = new window.Image()
+    img.src = backgroundImageUrl
+    await new Promise((resolve) => {
+      img.onload = resolve
+    })
+
+    canvas.width = img.width
+    canvas.height = img.height
+
+    // Draw base image
+    ctx.drawImage(img, 0, 0)
+
+    // Apply effects
+    applyEffects(canvas)
+
+    // Draw text
+    const topY = canvas.height * 0.1 + memeSettings.text.position.y
+    const bottomY = canvas.height * 0.9 + memeSettings.text.position.y
+    const centerX = canvas.width / 2 + memeSettings.text.position.x
+
+    if (memeSettings.text.top) {
+      drawText(ctx, memeSettings.text.top, centerX, topY)
+    }
+    if (memeSettings.text.bottom) {
+      drawText(ctx, memeSettings.text.bottom, centerX, bottomY)
+    }
+
+    // Draw stickers
+    drawStickers(ctx, canvas)
+
+    // Convert to blob and upload
+    const blob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob)
+      }, "image/png")
+    })
+
+    const formData = new FormData()
+    formData.append("meme", blob)
+
+    const response = await fetch("/api/upload-meme", {
+      method: "POST",
+      body: formData
+    })
+
+    const { url } = await response.json()
+    setMemeUrl(url)
+  }
+
   return (
     <div className="max-w-3xl mx-auto">
       <Card className="p-6 bg-white/10 backdrop-blur-sm border-purple-500/30">
@@ -316,6 +501,30 @@ export default function MemeGenerator() {
               <p className="mt-4 text-purple-200">
                 Processing...
               </p>
+            </div>
+          )}
+
+          {transcript && (
+            <div className="space-y-4">
+              <MemeCustomizer
+                settings={memeSettings}
+                onCustomize={handleCustomize}
+              />
+              
+              <Button
+                onClick={() => generateMeme(memeUrl, transcript)}
+                disabled={isProcessing}
+                className="w-full"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Generate Meme"
+                )}
+              </Button>
             </div>
           )}
         </div>
