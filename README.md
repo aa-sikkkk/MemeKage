@@ -1,6 +1,6 @@
 # MemeKage
 
-A Next.js application that lets users record voice messages, transcribe them, and turn them into anime memes.
+A Next.js application that lets users record voice messages, transcribe them, and turn them into anime memes. 
 
 ## Features
 
